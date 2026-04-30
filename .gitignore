@@ -1,0 +1,15 @@
+.codex
+.codex/
+build/
+
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+*.swp
+*.swo
+*.tmp
+.DS_Store
