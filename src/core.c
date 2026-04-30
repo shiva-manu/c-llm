@@ -2,17 +2,19 @@
 #include "llm.h"
 
 // forward declarations
-LLMResponse openai_generate(LLMResponse *req);
-LLMResponse claude_generate(LLMRequest *req);
+LLMResponse openai_generate(const LLMRequest *req);
+LLMResponse claude_generate(const LLMRequest *req);
 
-LLMResponse llm_generate(const char *provider,LLMRequest *req){
-    if(strcmp(provider,"openai")==0){
+LLMResponse llm_generate(const char *provider, const LLMRequest *req)
+{
+    if (strcmp(provider, "openai") == 0) {
         return openai_generate(req);
-    }else if(strcmp(provider,"claude")==0){
+    } else if (strcmp(provider, "claude") == 0) {
         return claude_generate(req);
     }
-    LLMResponse res={0};
-    res.success=0;
-    res.error="Unkown provider";
+
+    LLMResponse res = {0};
+    res.success = 0;
+    res.error = "Unknown provider";
     return res;
 }
