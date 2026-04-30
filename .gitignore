@@ -13,3 +13,8 @@ build/
 *.swo
 *.tmp
 .DS_Store
+
+.qwen/
+gha-creds-*.json
+
+.gemini/

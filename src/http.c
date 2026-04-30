@@ -103,20 +103,42 @@ static size_t write_callback(void *data,size_t size,size_t nmemb,void *userp){
  */
 
 char *http_post(const char* url,struct curl_slist *headers,const char *body){
+    // Initialize a libcurl easy handle
     CURL *curl=curl_easy_init();
     if(!curl){
         return NULL; // Failed to initialize libcurl
     }
+    /**
+     * Allocate a 1-byte seed buffer so that realloc() in the callback
+     * never receives NULL as its first argument.
+     * size starts at 0 because no data has been received yet.
+     */
     struct Memory chunk={malloc(1),0};
-
+    if(!chunk.response){
+        curl_easy_cleanup(curl);
+        return NULL;
+    }
+    /*---- Configure the request--------------------------------------*/
+    /*Target URL*/
     curl_easy_setopt(curl,CURLOPT_URL,url);
+
+    // Custom HTTP headers (Content-Type, Authorization, etc)
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+    // POST body - libcurl will use POST automatically when this is set
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+
+    // Register our callback so libcurl delivers response data to us
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+
+    // Pass our Memory struct as the fourth argument to write_callback
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &chunk);
 
+    /*---- Execute the request------------------------------------------ */
     // Check for errors during the request
     CURLcode res=curl_easy_perform(curl);
+
+    /*Always clean up the handle regardless of success or failure*/
     if(res!=CURLE_OK){
         //print the error to stderr
         fprintf(stderr,"curl_easy_perform() failed: %s\n",curl_easy_strerror(res));
