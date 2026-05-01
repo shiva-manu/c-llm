@@ -42,21 +42,37 @@ jobs:
         run: |-
           env | grep '^DEBUG_'
 
+  check_secret:
+    runs-on: 'ubuntu-latest'
+    outputs:
+      has_api_key: '${{ steps.check.outputs.has_api_key }}'
+    steps:
+      - name: 'Check if QWEN_API_KEY is set'
+        id: 'check'
+        env:
+          QWEN_API_KEY: '${{ secrets.QWEN_API_KEY }}'
+        run: |-
+          if [ -n "$QWEN_API_KEY" ]; then
+            echo "has_api_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_api_key=false" >> "$GITHUB_OUTPUT"
+          fi
+
   dispatch:
-    # For PRs: only if not from a fork
-    # For issues: only on open/reopen
-    # For comments: only if user types @gemini-cli and is OWNER/MEMBER/COLLABORATOR
+    needs: 'check_secret'
     if: |-
-      (
-        github.event_name == 'pull_request' &&
-        github.event.pull_request.head.repo.fork == false
-      ) || (
-        github.event_name == 'issues' &&
-        contains(fromJSON('["opened", "reopened"]'), github.event.action)
-      ) || (
-        github.event.sender.type == 'User' &&
-        startsWith(github.event.comment.body || github.event.review.body || github.event.issue.body, '@qwen-code') &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association || github.event.review.author_association || github.event.issue.author_association)
+      needs.check_secret.outputs.has_api_key == 'true' && (
+        (
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.fork == false
+        ) || (
+          github.event_name == 'issues' &&
+          contains(fromJSON('["opened", "reopened"]'), github.event.action)
+        ) || (
+          github.event.sender.type == 'User' &&
+          startsWith(github.event.comment.body || github.event.review.body || github.event.issue.body, '@qwen-code') &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association || github.event.review.author_association || github.event.issue.author_association)
+        )
       )
     runs-on: 'ubuntu-latest'
     permissions:

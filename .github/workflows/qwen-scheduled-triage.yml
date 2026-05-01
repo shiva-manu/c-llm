@@ -26,7 +26,25 @@ defaults:
     shell: 'bash'
 
 jobs:
+  check_secret:
+    runs-on: 'ubuntu-latest'
+    outputs:
+      has_api_key: '${{ steps.check.outputs.has_api_key }}'
+    steps:
+      - name: 'Check if QWEN_API_KEY is set'
+        id: 'check'
+        env:
+          QWEN_API_KEY: '${{ secrets.QWEN_API_KEY }}'
+        run: |-
+          if [ -n "$QWEN_API_KEY" ]; then
+            echo "has_api_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_api_key=false" >> "$GITHUB_OUTPUT"
+          fi
+
   triage:
+    needs: 'check_secret'
+    if: needs.check_secret.outputs.has_api_key == 'true'
     runs-on: 'ubuntu-latest'
     timeout-minutes: 7
     permissions:
