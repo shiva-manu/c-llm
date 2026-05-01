@@ -2,7 +2,6 @@
  * http.h
  *
  * Internal header for HTTP and JSON utilities shared across providers.
- * Not part of the public API.
  */
 
 #ifndef HTTP_H
@@ -11,52 +10,60 @@
 #include <curl/curl.h>
 
 /**
- * Stream chunk callback - called for each chunk of data received.
- *
- * @data:      pointer to the chunk (not null-terminated).
- * @size:      size of the chunk in bytes.
- * @user_data: opaque pointer passed through from http_post_stream.
- *
- * Return: 0 to continue, non-zero to abort the transfer.
+ * Stream chunk callback for SSE processing.
+ * Return 0 to continue, non-zero to abort.
  */
 typedef int (*http_stream_cb)(const char *data, size_t size, void *user_data);
 
 /**
- * http_post - send an HTTP POST request and return the response body.
+ * http_post - send an HTTP POST request.
  *
- * @url:     the full URL to POST to.
- * @headers: linked list of custom headers (caller retains ownership).
- * @body:    null-terminated POST body (e.g. JSON).
+ * @url:        full URL.
+ * @headers:    custom headers (caller retains ownership).
+ * @body:       POST body.
+ * @timeout_ms: request timeout (0 = no timeout).
  *
- * Return: heap-allocated response body (caller must free), or NULL on failure.
+ * Return: heap-allocated response body (caller frees), or NULL on failure.
  */
-char *http_post(const char *url, struct curl_slist *headers, const char *body);
+char *http_post(const char *url, struct curl_slist *headers,
+                const char *body, long timeout_ms);
 
 /**
- * http_post_stream - send a streaming HTTP POST request.
+ * http_post_retry - http_post with retry and exponential backoff.
  *
- * Calls the callback for each chunk of data received (for SSE processing).
+ * Retries on HTTP 429, 500, 502, 503. Max 3 attempts.
+ * Respects Retry-After header. Returns HTTP status via out-param.
  *
- * @url:      the full URL to POST to.
- * @headers:  linked list of custom headers.
- * @body:     null-terminated POST body.
- * @cb:       callback invoked for each data chunk.
- * @user_data: opaque pointer passed to the callback.
+ * @url:          full URL.
+ * @headers:      custom headers.
+ * @body:         POST body.
+ * @timeout_ms:   per-request timeout (0 = no timeout).
+ * @http_status:  out-param for HTTP status code (0 on connection error).
  *
- * Return: 0 on success, non-zero on failure.
+ * Return: heap-allocated response body (caller frees), or NULL on failure.
+ */
+char *http_post_retry(const char *url, struct curl_slist *headers,
+                      const char *body, long timeout_ms, int *http_status);
+
+/**
+ * http_post_stream - send a streaming HTTP POST (SSE).
+ *
+ * @url:        full URL.
+ * @headers:    custom headers.
+ * @body:       POST body.
+ * @timeout_ms: per-request timeout (0 = no timeout).
+ * @cb:         callback for each data chunk.
+ * @user_data:  opaque pointer passed to cb.
+ *
+ * Return: 0 on success, -1 on failure.
  */
 int http_post_stream(const char *url, struct curl_slist *headers,
-                     const char *body, http_stream_cb cb, void *user_data);
+                     const char *body, long timeout_ms,
+                     http_stream_cb cb, void *user_data);
 
 /**
- * json_escape - escape a string for safe inclusion inside a JSON value.
- *
- * Wraps the string in double quotes and escapes special characters.
- *
- * @src: the raw, null-terminated input string.
- *
- * Return: heap-allocated JSON-safe string including surrounding quotes.
- *         Caller must free(). Returns NULL on allocation failure.
+ * json_escape - escape a string for JSON inclusion (with surrounding quotes).
+ * Caller must free(). Returns NULL on allocation failure.
  */
 char *json_escape(const char *src);
 

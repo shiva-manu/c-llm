@@ -20,10 +20,11 @@ LLMResponse mistral_generate(const LLMRequest *req);
 LLMResponse replicate_generate(const LLMRequest *req);
 LLMResponse huggingface_generate(const LLMRequest *req);
 
-/**
- * Provider dispatch table.
- * Maps provider name strings to their generate functions.
- */
+/* embedding providers */
+LLMEmbedResponse openai_embed(const LLMEmbedRequest *req);
+LLMEmbedResponse cohere_embed(const LLMEmbedRequest *req);
+LLMEmbedResponse gemini_embed(const LLMEmbedRequest *req);
+
 static const struct {
     const char *name;
     LLMResponse (*fn)(const LLMRequest *req);
@@ -49,14 +50,17 @@ static const struct {
 };
 
 static LLMResponse find_and_call(const char *provider, const LLMRequest *req) {
+    if (!provider) {
+        LLMResponse res = {0};
+        res.error = "Provider name is NULL";
+        return res;
+    }
     for (int i = 0; providers[i].name; i++) {
         if (strcmp(provider, providers[i].name) == 0) {
             return providers[i].fn(req);
         }
     }
-
     LLMResponse res = {0};
-    res.success = 0;
     res.error = "Unknown provider";
     return res;
 }
@@ -70,17 +74,34 @@ LLMResponse llm_generate_stream(const char *provider, const LLMRequest *req)
 {
     if (!req->stream || !req->stream_cb) {
         LLMResponse res = {0};
-        res.success = 0;
         res.error = "Streaming requires stream=1 and stream_cb to be set";
         return res;
     }
-
     if (req->max_tokens <= 0) {
         LLMResponse res = {0};
-        res.success = 0;
         res.error = "Streaming requires max_tokens > 0";
         return res;
     }
-
     return find_and_call(provider, req);
+}
+
+LLMEmbedResponse llm_embed(const char *provider, const LLMEmbedRequest *req)
+{
+    LLMEmbedResponse res = {0};
+
+    if (!provider) {
+        res.error = "Provider name is NULL";
+        return res;
+    }
+
+    if (strcmp(provider, "openai") == 0) {
+        return openai_embed(req);
+    } else if (strcmp(provider, "cohere") == 0) {
+        return cohere_embed(req);
+    } else if (strcmp(provider, "gemini") == 0) {
+        return gemini_embed(req);
+    }
+
+    res.error = "Embeddings not supported for this provider. Use: openai, cohere, gemini";
+    return res;
 }

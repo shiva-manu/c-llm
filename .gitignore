@@ -8,7 +8,7 @@ build/
 *.dylib
 *.dll
 *.exe
-
+.env
 *.swp
 *.swo
 *.tmp

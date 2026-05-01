@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-linux:
+    name: Build & Test (Linux, GCC)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libcjson-dev libcurl4-openssl-dev cmake
+
+      - name: Build
+        run: |
+          mkdir build && cd build
+          cmake .. -DCMAKE_C_COMPILER=gcc
+          make -j$(nproc)
+
+      - name: Run tests
+        run: |
+          cd build
+          ctest --output-on-failure
+
+  build-macos:
+    name: Build & Test (macOS, Clang)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install cjson cmake
+
+      - name: Build
+        run: |
+          mkdir build && cd build
+          cmake .. -DCMAKE_C_COMPILER=clang
+          make -j$(sysctl -n hw.ncpu)
+
+      - name: Run tests
+        run: |
+          cd build
+          ctest --output-on-failure
+
+  build-gcc-no-cmake:
+    name: Build (Linux, GCC direct)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libcjson-dev libcurl4-openssl-dev
+
+      - name: Build library objects
+        run: |
+          gcc -std=c99 -Wall -Wextra -Werror -Wno-unused-function \
+            -Iinclude -Isrc \
+            -c src/core.c src/http.c src/parse.c src/providers/*.c
+
+      - name: Build example
+        run: |
+          gcc -std=c99 -Wall -Wextra -Werror -Wno-unused-function \
+            -Iinclude -Isrc \
+            -o llm_demo examples/main.c *.o -lcurl -lcjson
+
+      - name: Build and run tests
+        run: |
+          gcc -std=c99 -Wall -Wextra -Werror -Wno-unused-function \
+            -Iinclude -Isrc \
+            -o test_parsers tests/test_parsers.c *.o -lcurl -lcjson -lm
+          gcc -std=c99 -Wall -Wextra -Werror -Wno-unused-function \
+            -Iinclude -Isrc \
+            -o test_json_escape tests/test_json_escape.c *.o -lcurl -lcjson -lm
+          gcc -std=c99 -Wall -Wextra -Werror -Wno-unused-function \
+            -Iinclude -Isrc \
+            -o test_integration tests/test_integration.c *.o -lcurl -lcjson -lm
+          ./test_parsers
+          ./test_json_escape
+          ./test_integration
