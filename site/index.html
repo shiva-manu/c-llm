@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AnyLM - One C Function. 17 LLM Providers. Zero Lock-in.</title>
+<meta name="description" content="AnyLM is a single-header C99 library that gives your application access to 17 LLM providers through a unified interface.">
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0a0a0f;--surface:#12121a;--surface2:#1a1a26;--border:#2a2a3a;
+    --text:#e4e4ef;--text2:#9090a8;--accent:#6366f1;--accent2:#818cf8;
+    --green:#34d399;--amber:#fbbf24;--rose:#f472b6;
+    --font-mono:'SF Mono','Cascadia Code','Fira Code',monospace;
+    --font-sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  }
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--text);font-family:var(--font-sans);line-height:1.6;overflow-x:hidden}
+  a{color:var(--accent2);text-decoration:none}a:hover{text-decoration:underline}
+  .container{max-width:1100px;margin:0 auto;padding:0 1.5rem}
+
+  /* Nav */
+  nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,15,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}
+  nav .container{display:flex;align-items:center;justify-content:space-between;height:56px}
+  .logo{font-weight:800;font-size:1.2rem;color:#fff;letter-spacing:-.02em}
+  .logo span{color:var(--accent2)}
+  .nav-links{display:flex;gap:1.5rem;align-items:center}
+  .nav-links a{color:var(--text2);font-size:.875rem;font-weight:500;transition:color .2s}
+  .nav-links a:hover{color:#fff;text-decoration:none}
+  .gh-btn{display:inline-flex;align-items:center;gap:.4rem;background:var(--surface2);border:1px solid var(--border);padding:.4rem .9rem;border-radius:6px;font-size:.8rem;color:var(--text);transition:border-color .2s}
+  .gh-btn:hover{border-color:var(--accent);text-decoration:none}
+
+  /* Hero */
+  .hero{padding:10rem 0 5rem;text-align:center;position:relative}
+  .hero::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:600px;height:600px;background:radial-gradient(circle,rgba(99,102,241,.12) 0%,transparent 70%);pointer-events:none}
+  .badge{display:inline-flex;align-items:center;gap:.4rem;background:var(--surface2);border:1px solid var(--border);padding:.3rem .8rem;border-radius:999px;font-size:.75rem;color:var(--accent2);margin-bottom:1.5rem;font-weight:600;letter-spacing:.03em}
+  .badge::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .hero h1{font-size:clamp(2.5rem,6vw,4.5rem);font-weight:800;line-height:1.1;letter-spacing:-.03em;margin-bottom:1rem;background:linear-gradient(135deg,#fff 0%,var(--accent2) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .hero p{font-size:1.2rem;color:var(--text2);max-width:600px;margin:0 auto 2.5rem}
+  .hero-btns{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap}
+  .btn{display:inline-flex;align-items:center;gap:.5rem;padding:.7rem 1.5rem;border-radius:8px;font-size:.95rem;font-weight:600;transition:all .2s;border:none;cursor:pointer}
+  .btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:var(--accent2);text-decoration:none}
+  .btn-outline{background:transparent;border:1px solid var(--border);color:var(--text)}.btn-outline:hover{border-color:var(--accent);text-decoration:none}
+
+  /* Stats */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin:4rem 0}
+  .stat{text-align:center;padding:1.5rem;background:var(--surface);border:1px solid var(--border);border-radius:12px}
+  .stat .num{font-size:2rem;font-weight:800;color:#fff}.stat .label{font-size:.8rem;color:var(--text2);margin-top:.25rem}
+
+  /* Code block */
+  .code-section{padding:4rem 0}
+  .code-section h2{text-align:center;font-size:2rem;font-weight:700;margin-bottom:.5rem}
+  .code-section>p{text-align:center;color:var(--text2);margin-bottom:2.5rem}
+  .code-window{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .code-bar{display:flex;align-items:center;gap:.5rem;padding:.75rem 1rem;background:var(--surface2);border-bottom:1px solid var(--border)}
+  .dot{width:10px;height:10px;border-radius:50%}
+  .dot-r{background:#ff5f57}.dot-y{background:#febc2e}.dot-g{background:#28c840}
+  .code-tabs{display:flex;margin-left:1rem;gap:0}
+  .code-tab{padding:.3rem .8rem;font-size:.75rem;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s}
+  .code-tab.active{color:var(--accent2);border-color:var(--accent)}
+  .code-body{padding:1.5rem}
+  .code-body pre{font-family:var(--font-mono);font-size:.85rem;line-height:1.7;color:var(--text);white-space:pre-wrap;word-wrap:break-word}
+  .code-body .kw{color:var(--accent2)}.code-body .str{color:var(--green)}.code-body .cmt{color:var(--text2)}.code-body .fn{color:var(--amber)}.code-body .num{color:var(--rose)}.code-body .type{color:#60a5fa}
+
+  /* Providers */
+  .providers{padding:4rem 0}
+  .providers h2{text-align:center;font-size:2rem;font-weight:700;margin-bottom:.5rem}
+  .providers>p{text-align:center;color:var(--text2);margin-bottom:2.5rem}
+  .provider-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.75rem}
+  .provider{display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.75rem;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-size:.8rem;font-weight:600;color:var(--text);transition:all .2s;text-align:center}
+  .provider:hover{border-color:var(--accent);transform:translateY(-2px)}
+  .provider .icon{font-size:1.1rem}
+
+  /* Features */
+  .features{padding:4rem 0}
+  .features h2{text-align:center;font-size:2rem;font-weight:700;margin-bottom:.5rem}
+  .features>p{text-align:center;color:var(--text2);margin-bottom:2.5rem}
+  .feat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1rem}
+  .feat{padding:1.5rem;background:var(--surface);border:1px solid var(--border);border-radius:12px;transition:border-color .2s}
+  .feat:hover{border-color:var(--accent)}
+  .feat-icon{font-size:1.5rem;margin-bottom:.75rem}
+  .feat h3{font-size:1rem;font-weight:700;margin-bottom:.4rem;color:#fff}
+  .feat p{font-size:.85rem;color:var(--text2);line-height:1.5}
+
+  /* Architecture */
+  .arch{padding:4rem 0}
+  .arch h2{text-align:center;font-size:2rem;font-weight:700;margin-bottom:.5rem}
+  .arch>p{text-align:center;color:var(--text2);margin-bottom:2.5rem}
+  .arch-diagram{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:2rem;text-align:center;font-family:var(--font-mono);font-size:.75rem;line-height:1.8;color:var(--text2);overflow-x:auto}
+
+  /* Install */
+  .install{padding:4rem 0}
+  .install h2{text-align:center;font-size:2rem;font-weight:700;margin-bottom:.5rem}
+  .install>p{text-align:center;color:var(--text2);margin-bottom:2.5rem}
+  .install-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem}
+  .step{padding:1.5rem;background:var(--surface);border:1px solid var(--border);border-radius:12px}
+  .step-num{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:var(--accent);color:#fff;border-radius:50%;font-size:.8rem;font-weight:700;margin-bottom:.75rem}
+  .step h3{font-size:1rem;font-weight:700;margin-bottom:.5rem;color:#fff}
+  .step pre{background:var(--bg);padding:.75rem;border-radius:6px;font-size:.8rem;overflow-x:auto;font-family:var(--font-mono);color:var(--green)}
+
+  /* CTA */
+  .cta{padding:5rem 0;text-align:center}
+  .cta h2{font-size:2.5rem;font-weight:800;margin-bottom:1rem}
+  .cta p{color:var(--text2);margin-bottom:2rem;max-width:500px;margin-left:auto;margin-right:auto}
+
+  /* Footer */
+  footer{padding:2rem 0;border-top:1px solid var(--border);text-align:center;color:var(--text2);font-size:.8rem}
+
+  @media(max-width:640px){
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .provider-grid{grid-template-columns:repeat(2,1fr)}
+    .nav-links a:not(.gh-btn){display:none}
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="container">
+    <div class="logo">Any<span>LM</span></div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#providers">Providers</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/shivamani/anylm" class="gh-btn">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="container">
+    <div class="badge">Open Source &middot; MIT Licensed &middot; Pure C99</div>
+    <h1>One C function.<br>17 LLM providers.</h1>
+    <p>AnyLM is a single-header C99 library that gives your application access to every major LLM provider through a unified interface. Zero vendor lock-in.</p>
+    <div class="hero-btns">
+      <a href="#install" class="btn btn-primary">Get Started</a>
+      <a href="https://github.com/shivamani/anylm" class="btn btn-outline">View on GitHub</a>
+    </div>
+  </div>
+</section>
+
+<div class="container">
+  <div class="stats">
+    <div class="stat"><div class="num">17</div><div class="label">LLM Providers</div></div>
+    <div class="stat"><div class="num">1</div><div class="label">Header File</div></div>
+    <div class="stat"><div class="num">2</div><div class="label">Dependencies</div></div>
+    <div class="stat"><div class="num">0</div><div class="label">Vendor Lock-in</div></div>
+  </div>
+</div>
+
+<section class="code-section" id="code">
+  <div class="container">
+    <h2>Switch providers in one line</h2>
+    <p>Write once against the unified API. Change a string to switch providers.</p>
+    <div class="code-window">
+      <div class="code-bar">
+        <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+        <div class="code-tabs">
+          <span class="code-tab active" onclick="showTab('basic')">Basic</span>
+          <span class="code-tab" onclick="showTab('stream')">Streaming</span>
+          <span class="code-tab" onclick="showTab('fallback')">Fallback</span>
+        </div>
+      </div>
+      <div class="code-body">
+        <pre id="tab-basic"><span class="type">LLMRequest</span> req = {
+    .model       = <span class="str">"gpt-4o-mini"</span>,
+    .prompt      = <span class="str">"Explain monads in simple terms."</span>,
+    .system      = <span class="str">"You are a patient teacher."</span>,
+    .max_tokens  = <span class="num">200</span>,
+    .temperature = <span class="num">0.7f</span>
+};
+
+<span class="cmt">// Use OpenAI</span>
+<span class="type">LLMResponse</span> res = <span class="fn">llm_generate</span>(<span class="str">"openai"</span>, &amp;req);
+
+<span class="cmt">// Swap to Claude -- that's it</span>
+<span class="type">LLMResponse</span> res = <span class="fn">llm_generate</span>(<span class="str">"claude"</span>, &amp;req);
+
+<span class="cmt">// Or use Groq for speed</span>
+<span class="type">LLMResponse</span> res = <span class="fn">llm_generate</span>(<span class="str">"groq"</span>, &amp;req);</pre>
+        <pre id="tab-stream" style="display:none"><span class="kw">void</span> <span class="fn">on_token</span>(<span class="kw">const char</span> *token, <span class="kw">void</span> *ud) {
+    <span class="fn">printf</span>(<span class="str">"%s"</span>, token);
+    <span class="fn">fflush</span>(stdout);
+}
+
+<span class="type">LLMRequest</span> req = {
+    .model      = <span class="str">"gpt-4o-mini"</span>,
+    .prompt     = <span class="str">"Write a short story."</span>,
+    .max_tokens = <span class="num">500</span>,
+    .stream     = <span class="num">1</span>,
+    .stream_cb  = <span class="fn">on_token</span>,
+};
+
+<span class="type">LLMResponse</span> res = <span class="fn">llm_generate_stream</span>(<span class="str">"openai"</span>, &amp;req);</pre>
+        <pre id="tab-fallback" style="display:none"><span class="kw">const char</span> *providers[] = {<span class="str">"groq"</span>, <span class="str">"openai"</span>, <span class="str">"claude"</span>, <span class="num">NULL</span>};
+<span class="type">LLMResponse</span> res = {<span class="num">0</span>};
+
+<span class="kw">for</span> (<span class="kw">int</span> i = <span class="num">0</span>; providers[i]; i++) {
+    res = <span class="fn">llm_generate</span>(providers[i], &amp;req);
+    <span class="kw">if</span> (res.success) <span class="kw">break</span>;
+    <span class="fn">fprintf</span>(stderr, <span class="str">"%s failed: %s\n"</span>, providers[i], res.error);
+}</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="providers" id="providers">
+  <div class="container">
+    <h2>17 Providers, One Interface</h2>
+    <p>Cloud APIs, local inference, and embeddings -- all through the same function call.</p>
+    <div class="provider-grid">
+      <div class="provider"><span class="icon">&#9679;</span> OpenAI</div>
+      <div class="provider"><span class="icon">&#9679;</span> Claude</div>
+      <div class="provider"><span class="icon">&#9679;</span> Gemini</div>
+      <div class="provider"><span class="icon">&#9679;</span> Groq</div>
+      <div class="provider"><span class="icon">&#9679;</span> Together AI</div>
+      <div class="provider"><span class="icon">&#9679;</span> Perplexity</div>
+      <div class="provider"><span class="icon">&#9679;</span> DeepSeek</div>
+      <div class="provider"><span class="icon">&#9679;</span> Fireworks</div>
+      <div class="provider"><span class="icon">&#9679;</span> xAI (Grok)</div>
+      <div class="provider"><span class="icon">&#9679;</span> Cerebras</div>
+      <div class="provider"><span class="icon">&#9679;</span> SambaNova</div>
+      <div class="provider"><span class="icon">&#9679;</span> OpenRouter</div>
+      <div class="provider"><span class="icon">&#9679;</span> Cohere</div>
+      <div class="provider"><span class="icon">&#9679;</span> Mistral</div>
+      <div class="provider"><span class="icon">&#9679;</span> Replicate</div>
+      <div class="provider"><span class="icon">&#9679;</span> Hugging Face</div>
+      <div class="provider" style="border-color:var(--green)"><span class="icon" style="color:var(--green)">&#9679;</span> Ollama</div>
+    </div>
+  </div>
+</section>
+
+<section class="features" id="features">
+  <div class="container">
+    <h2>Built for Real Applications</h2>
+    <p>Everything you need to ship LLM-powered C and C++ software.</p>
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="feat-icon">&#9889;</div>
+        <h3>Streaming (SSE)</h3>
+        <p>Real-time token delivery via callback. Handles OpenAI, Claude, and Gemini SSE formats internally.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">&#128269;</div>
+        <h3>Tool / Function Calling</h3>
+        <p>Define tools with JSON schemas. Unified parsing of tool calls from OpenAI, Claude, and Gemini.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">&#128444;</div>
+        <h3>Multimodal / Vision</h3>
+        <p>Send image URLs or base64 data URIs as input. Claude, OpenAI, and Gemini vision support built in.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">&#128172;</div>
+        <h3>Multi-turn Conversations</h3>
+        <p>Pass full conversation history with system, user, and assistant roles. Works across all providers.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">&#128202;</div>
+        <h3>Embeddings</h3>
+        <p>Generate vector embeddings via OpenAI, Cohere, or Gemini with the companion <code>llm_embed()</code> function.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">&#128295;</div>
+        <h3>JSON Mode</h3>
+        <p>Request structured JSON output. Each provider's native format is handled transparently.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">&#128736;</div>
+        <h3>Retry with Backoff</h3>
+        <p>Automatic retries on 429/5xx errors with exponential backoff and Retry-After header support.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">&#128274;</div>
+        <h3>Thread-Safe</h3>
+        <p>No global state. All state is local or passed through function arguments. Safe for concurrent use.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">&#128230;</div>
+        <h3>Static Library</h3>
+        <p>Link <code>libllm.a</code> into your project. No runtime dependencies, no dynamic linking headaches.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="arch">
+  <div class="container">
+    <h2>Clean Architecture</h2>
+    <p>A dispatch table routes calls to provider-specific implementations. Shared code minimizes duplication.</p>
+    <div class="arch-diagram">
+<pre style="text-align:left;display:inline-block;color:var(--text)">
+               ┌──────────────────┐
+               │   <span style="color:var(--accent2)">llm.h</span> (public)  │
+               └────────┬─────────┘
+                        │
+               ┌────────▼─────────┐
+               │     <span style="color:var(--amber)">core.c</span>        │
+               │   (dispatch)     │
+               └────────┬─────────┘
+                        │
+       ┌────────┬───────┼───────┬────────┐
+       │        │       │       │        │
+  ┌────▼───┐┌───▼──┐┌───▼──┐┌──▼───┐┌───▼────┐
+  │ openai ││claude││gemini││cohere││  ...   │
+  │   .c   ││  .c  ││  .c  ││  .c  ││  .c    │
+  └────┬───┘└──────┘└──────┘└──────┘└────────┘
+       │
+  ┌────▼──────────┐
+  │openai_compat.c │ ← shared by 9 providers
+  └───────────────┘   (groq, together, deepseek...)
+
+  ┌───────────────┐   ┌───────────────┐
+  │    http.c     │   │    parse.c    │
+  │  (libcurl)    │   │   (cJSON)     │
+  └───────────────┘   └───────────────┘</pre>
+    </div>
+  </div>
+</section>
+
+<section class="install" id="install">
+  <div class="container">
+    <h2>Get Started in 3 Steps</h2>
+    <p>From zero to LLM-powered C code in under a minute.</p>
+    <div class="install-steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <h3>Install Dependencies</h3>
+        <pre>sudo apt install libcurl4-openssl-dev libcjson-dev</pre>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <h3>Build the Library</h3>
+        <pre>git clone https://github.com/shivamani/anylm.git
+cd anylm
+cmake -S . -B build && cmake --build build -j</pre>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <h3>Link and Use</h3>
+        <pre>gcc -std=c99 -Iinclude -o myapp myapp.c \
+  -Lbuild -lllm -lcurl -lcjson</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cta">
+  <div class="container">
+    <h2>Stop rewriting integrations.</h2>
+    <p>AnyLM gives you one function call for 17 providers. Ship faster, switch freely.</p>
+    <div class="hero-btns">
+      <a href="https://github.com/shivamani/anylm" class="btn btn-primary">Star on GitHub</a>
+      <a href="https://github.com/shivamani/anylm/blob/main/CONTRIBUTING.md" class="btn btn-outline">Contribute</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>AnyLM &copy; 2026 Shivamani &middot; MIT License &middot; Built with pure C99</p>
+  </div>
+</footer>
+
+<script>
+function showTab(name){
+  document.querySelectorAll('.code-body pre').forEach(el=>el.style.display='none');
+  document.querySelectorAll('.code-tab').forEach(el=>el.classList.remove('active'));
+  document.getElementById('tab-'+name).style.display='block';
+  event.target.classList.add('active');
+}
+</script>
+</body>
+</html>
