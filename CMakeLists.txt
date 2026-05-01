@@ -3,7 +3,12 @@ project(ANYLM C)
 
 set(CMAKE_C_STANDARD 99)
 
-include_directories(include)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(CJSON REQUIRED libcjson)
+
+include_directories(include src ${CJSON_INCLUDE_DIRS})
+
+link_directories(${CJSON_LIBRARY_DIRS})
 
 file(GLOB SRC_FILES
      src/*.c
@@ -12,7 +17,7 @@ file(GLOB SRC_FILES
 
 add_library(llm STATIC ${SRC_FILES})
 
-target_link_libraries(llm curl cjson)
+target_link_libraries(llm curl ${CJSON_LIBRARIES})
 
 add_executable(example examples/main.c)
 
