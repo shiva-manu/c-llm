@@ -1,22 +1,10 @@
 /**
- * http_post.c
+ * http.c
  *
- * A minimal HTTP POST helper built on top of libcurl.
- * It sends a POST request with custom headers and a body,
- * then returns the full response as a heap-allocated C string.
- *
- * Compile:
- *   gcc http_post.c -lcurl -o http_post
- *
- * Usage:
- *   char *resp = http_post("https://example.com/api", headers, "{\"key\":\"value\"}");
- *   if (resp) {
- *       printf("%s\n", resp);
- *       free(resp);  // caller is responsible for freeing
- *   }
+ * Minimal HTTP POST helper and JSON utilities built on top of libcurl.
  */
 
-#include <curl/curl.h>
+#include "http.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -153,4 +141,77 @@ char *http_post(const char *url, struct curl_slist *headers, const char *body)
     curl_easy_cleanup(curl);
     // The Caller of this function Must free() the returned pointer!
     return chunk.response;
+}
+
+/**
+ * Streaming write callback - passes each chunk to the user callback.
+ */
+struct StreamCtx {
+    http_stream_cb cb;
+    void *user_data;
+};
+
+static size_t stream_write_callback(void *data, size_t size, size_t nmemb, void *userp)
+{
+    size_t total = size * nmemb;
+    struct StreamCtx *ctx = (struct StreamCtx *)userp;
+    if (ctx->cb((const char *)data, total, ctx->user_data) != 0) {
+        return 0; /* abort transfer */
+    }
+    return total;
+}
+
+int http_post_stream(const char *url, struct curl_slist *headers,
+                     const char *body, http_stream_cb cb, void *user_data)
+{
+    CURL *curl = curl_easy_init();
+    if (!curl) return -1;
+
+    struct StreamCtx ctx = { cb, user_data };
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stream_write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ctx);
+
+    CURLcode res = curl_easy_perform(curl);
+    if (res != CURLE_OK) {
+        fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+        curl_easy_cleanup(curl);
+        return -1;
+    }
+
+    curl_easy_cleanup(curl);
+    return 0;
+}
+
+char *json_escape(const char *src) {
+    size_t max_len = strlen(src) * 2 + 3;
+    char *out = malloc(max_len);
+    if (!out) return NULL;
+
+    char *dst = out;
+    *dst++ = '"';
+
+    for (const char *p = src; *p; p++) {
+        switch (*p) {
+            case '"':  *dst++ = '\\'; *dst++ = '"';  break;
+            case '\\': *dst++ = '\\'; *dst++ = '\\'; break;
+            case '\n': *dst++ = '\\'; *dst++ = 'n';  break;
+            case '\r': *dst++ = '\\'; *dst++ = 'r';  break;
+            case '\t': *dst++ = '\\'; *dst++ = 't';  break;
+            default:
+                if ((unsigned char)*p < 0x20) {
+                    dst += sprintf(dst, "\\u%04x", (unsigned char)*p);
+                } else {
+                    *dst++ = *p;
+                }
+                break;
+        }
+    }
+
+    *dst++ = '"';
+    *dst   = '\0';
+    return out;
 }

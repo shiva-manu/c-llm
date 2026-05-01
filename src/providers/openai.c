@@ -1,187 +1,216 @@
 /**
  * openai.c
  *
- * Thin wrapper around the OpenAI Chat Completions API.
- * Uses http_post() from http_post.c to perform the actual HTTP call.
- *
- * Compile:
- *   gcc openai.c http_post.c -lcurl -o openai
+ * OpenAI Chat Completions API provider.
  *
  * Environment:
  *   OPENAI_API_KEY must be set before calling openai_generate().
  */
 
 #include "llm.h"
+#include "../http.h"
+#include "../parse.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <curl/curl.h>
-
-/* Defined in http_post.c */
-extern char *http_post(const char *url, struct curl_slist *headers, const char *body);
 
 /**
- * json_escape - escape a string for safe inclusion inside a JSON value.
- *
- * Wraps the string in double quotes and escapes special characters
- * (" , \ , and control characters) so the resulting string is valid JSON.
- *
- * @src: the raw, null-terminated input string.
- *
- * Return:
- *   A heap-allocated, null-terminated, JSON-safe string including the
- *   surrounding double quotes (e.g. "hello \"world\"").
- *   Returns NULL on allocation failure.
- *   The caller must free() the result.
+ * Build the JSON messages array with optional system prompt.
  */
-static char *json_escape(const char *src) {
-    /* Worst case: every character is a 2-char escape, plus quotes and terminator */
-    size_t max_len = strlen(src) * 2 + 3;
-    char *out = malloc(max_len);
-    if (!out) return NULL;
+static char *build_messages_json(const LLMRequest *req) {
+    char *esc_prompt = json_escape(req->prompt);
+    if (!esc_prompt) return NULL;
 
-    char *dst = out;
-    *dst++ = '"';  /* opening quote */
-
-    for (const char *p = src; *p; p++) {
-        switch (*p) {
-            case '"':  *dst++ = '\\'; *dst++ = '"';  break;
-            case '\\': *dst++ = '\\'; *dst++ = '\\'; break;
-            case '\n': *dst++ = '\\'; *dst++ = 'n';  break;
-            case '\r': *dst++ = '\\'; *dst++ = 'r';  break;
-            case '\t': *dst++ = '\\'; *dst++ = 't';  break;
-            default:
-                /* Escape other control characters */
-                if ((unsigned char)*p < 0x20) {
-                    dst += sprintf(dst, "\\u%04x", (unsigned char)*p);
-                } else {
-                    *dst++ = *p;
-                }
-                break;
-        }
+    if (req->system) {
+        char *esc_system = json_escape(req->system);
+        if (!esc_system) { free(esc_prompt); return NULL; }
+        size_t len = strlen(esc_system) + strlen(esc_prompt) + 64;
+        char *msg = malloc(len);
+        if (!msg) { free(esc_system); free(esc_prompt); return NULL; }
+        snprintf(msg, len,
+            "[{\"role\":\"system\",\"content\":%s},{\"role\":\"user\",\"content\":%s}]",
+            esc_system, esc_prompt);
+        free(esc_system);
+        free(esc_prompt);
+        return msg;
     }
 
-    *dst++ = '"';  /* closing quote */
-    *dst   = '\0';
-    return out;
+    size_t len = strlen(esc_prompt) + 64;
+    char *msg = malloc(len);
+    if (!msg) { free(esc_prompt); return NULL; }
+    snprintf(msg, len, "[{\"role\":\"user\",\"content\":%s}]", esc_prompt);
+    free(esc_prompt);
+    return msg;
 }
 
-/**
- * openai_generate - send a prompt to the OpenAI Chat Completions API.
- *
- * @req: pointer to an LLMRequest containing:
- *         - model:  model name (e.g. "gpt-4", "gpt-3.5-turbo")
- *         - prompt: the user message text
- *
- * Return:
- *   An LLMResponse where:
- *     - .success == 1 and .text contains the raw JSON response on success.
- *     - .success == 0 and .error contains a human-readable message on failure.
- *
- * Notes:
- *   - The caller is responsible for freeing res.text on success.
- *   - The raw JSON response has NOT been parsed; you may want to extract
- *     choices[0].message.content with a JSON parser (e.g. cJSON, jansson).
- */
-LLMResponse openai_generate(const LLMRequest *req) {
+static LLMResponse do_openai_request(const char *url, const char *api_key,
+                                      const LLMRequest *req, int is_stream) {
     LLMResponse res = {0};
 
-    /* ------------------------------------------------------------------ */
-    /* 1. Retrieve the API key from the environment                        */
-    /* ------------------------------------------------------------------ */
-    const char *api_key = getenv("OPENAI_API_KEY");
-    if (!api_key) {
-        res.success = 0;
-        res.error   = "Missing OPENAI_API_KEY environment variable";
-        return res;
-    }
+    char *esc_model = json_escape(req->model);
+    if (!esc_model) { res.error = "Memory allocation failed"; return res; }
 
-    /* ------------------------------------------------------------------ */
-    /* 2. Escape the model and prompt for safe JSON embedding               */
-    /* ------------------------------------------------------------------ */
-    char *esc_model  = json_escape(req->model);
-    char *esc_prompt = json_escape(req->prompt);
+    char *messages = build_messages_json(req);
+    if (!messages) { free(esc_model); res.error = "Memory allocation failed"; return res; }
 
-    if (!esc_model || !esc_prompt) {
-        free(esc_model);
-        free(esc_prompt);
-        res.success = 0;
-        res.error   = "Memory allocation failed";
-        return res;
-    }
-
-    /* ------------------------------------------------------------------ */
-    /* 3. Build the JSON body dynamically to avoid buffer overflow          */
-    /* ------------------------------------------------------------------ */
-    /**
-     * Template: {"model":"<esc_model>","messages":[{"role":"user","content":"<esc_prompt>"}]}
-     * We add 128 bytes of slack for the fixed JSON scaffolding.
-     */
-    size_t body_len = strlen(esc_model) + strlen(esc_prompt) + 128;
+    size_t body_len = strlen(esc_model) + strlen(messages) + 256;
     char *body = malloc(body_len);
     if (!body) {
-        free(esc_model);
-        free(esc_prompt);
-        res.success = 0;
-        res.error   = "Memory allocation failed";
+        free(esc_model); free(messages);
+        res.error = "Memory allocation failed";
         return res;
     }
 
-    snprintf(body, body_len,
-        "{ \"model\": %s, \"messages\": [{\"role\":\"user\",\"content\":%s}] }",
-        esc_model, esc_prompt);
+    if (is_stream) {
+        snprintf(body, body_len,
+            "{\"model\":%s,\"messages\":%s,\"max_tokens\":%d,\"temperature\":%.2f,\"stream\":true}",
+            esc_model, messages, req->max_tokens, req->temperature);
+    } else {
+        snprintf(body, body_len,
+            "{\"model\":%s,\"messages\":%s,\"max_tokens\":%d,\"temperature\":%.2f}",
+            esc_model, messages, req->max_tokens, req->temperature);
+    }
 
-    /* Escaped strings are no longer needed after building the body */
     free(esc_model);
-    free(esc_prompt);
+    free(messages);
 
-    /* ------------------------------------------------------------------ */
-    /* 4. Set up HTTP headers                                              */
-    /* ------------------------------------------------------------------ */
     struct curl_slist *headers = NULL;
     headers = curl_slist_append(headers, "Content-Type: application/json");
-    if (!headers) {
-        free(body);
-        res.success = 0;
-        res.error   = "Failed to create header list";
-        return res;
-    }
-
-    char auth[256];
+    char auth[512];
     snprintf(auth, sizeof(auth), "Authorization: Bearer %s", api_key);
     headers = curl_slist_append(headers, auth);
 
-    /* ------------------------------------------------------------------ */
-    /* 5. Send the POST request                                            */
-    /* ------------------------------------------------------------------ */
-    char *response = http_post(
-        "https://api.openai.com/v1/chat/completions",
-        headers,
-        body
-    );
-
-    /* Free resources we no longer need */
-    free(body);
-    curl_slist_free_all(headers);
-
-    /* ------------------------------------------------------------------ */
-    /* 6. Check the result                                                 */
-    /* ------------------------------------------------------------------ */
-    if (!response) {
-        res.success = 0;
-        res.error   = "HTTP request failed";
+    if (is_stream) {
+        /* Streaming mode */
+        struct { LLMStreamCallback cb; void *ud; } ctx = { req->stream_cb, req->stream_user_data };
+        /* We reuse the callback signature - the stream parser is called from within */
+        int rc = http_post_stream(url, headers, body, NULL, &ctx);
+        free(body);
+        curl_slist_free_all(headers);
+        if (rc != 0) { res.error = "Streaming request failed"; return res; }
+        res.success = 1;
         return res;
     }
 
-    /**
-     * At this point, response contains raw JSON like:
-     *   {"choices":[{"message":{"content":"Hello!"}}], ...}
-     *
-     * For a production implementation you would parse this with
-     * cJSON / jansson / parson and extract choices[0].message.content.
-     * For now we return the full JSON and let the caller decide.
-     */
-    res.text    = response;
+    char *response = http_post(url, headers, body);
+    free(body);
+    curl_slist_free_all(headers);
+
+    if (!response) { res.error = "HTTP request failed"; return res; }
+
+    res.text = response;
+    res.content = parse_openai_response(response);
     res.success = 1;
     return res;
+}
+
+/* Streaming chunk context */
+struct openai_stream_ctx {
+    LLMStreamCallback cb;
+    void *user_data;
+    char *buffer;
+    size_t buf_len;
+};
+
+static int openai_stream_chunk(const char *data, size_t size, void *user_data) {
+    struct openai_stream_ctx *ctx = (struct openai_stream_ctx *)user_data;
+
+    /* Append to buffer */
+    char *tmp = realloc(ctx->buffer, ctx->buf_len + size + 1);
+    if (!tmp) return -1;
+    ctx->buffer = tmp;
+    memcpy(ctx->buffer + ctx->buf_len, data, size);
+    ctx->buf_len += size;
+    ctx->buffer[ctx->buf_len] = '\0';
+
+    /* Process complete SSE lines */
+    char *line_start = ctx->buffer;
+    char *newline;
+    size_t consumed = 0;
+
+    while ((newline = memchr(line_start, '\n', ctx->buf_len - (line_start - ctx->buffer)))) {
+        *newline = '\0';
+        size_t line_len = newline - line_start;
+
+        if (line_len > 0) {
+            /* Check for "data: " prefix */
+            if (strncmp(line_start, "data: ", 6) == 0) {
+                const char *payload = line_start + 6;
+                if (strcmp(payload, "[DONE]") != 0) {
+                    char *token = parse_stream_openai(payload);
+                    if (token) {
+                        ctx->cb(token, ctx->user_data);
+                        free(token);
+                    }
+                }
+            }
+        }
+
+        consumed = (newline + 1) - ctx->buffer;
+        line_start = newline + 1;
+    }
+
+    /* Move remaining data to front */
+    if (consumed > 0) {
+        memmove(ctx->buffer, ctx->buffer + consumed, ctx->buf_len - consumed);
+        ctx->buf_len -= consumed;
+        ctx->buffer[ctx->buf_len] = '\0';
+    }
+
+    return 0;
+}
+
+static LLMResponse do_openai_request_stream(const char *url, const char *api_key,
+                                             const LLMRequest *req) {
+    LLMResponse res = {0};
+
+    char *esc_model = json_escape(req->model);
+    if (!esc_model) { res.error = "Memory allocation failed"; return res; }
+
+    char *messages = build_messages_json(req);
+    if (!messages) { free(esc_model); res.error = "Memory allocation failed"; return res; }
+
+    size_t body_len = strlen(esc_model) + strlen(messages) + 256;
+    char *body = malloc(body_len);
+    if (!body) { free(esc_model); free(messages); res.error = "Memory allocation failed"; return res; }
+
+    snprintf(body, body_len,
+        "{\"model\":%s,\"messages\":%s,\"max_tokens\":%d,\"temperature\":%.2f,\"stream\":true}",
+        esc_model, messages, req->max_tokens, req->temperature);
+
+    free(esc_model);
+    free(messages);
+
+    struct curl_slist *headers = NULL;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+    char auth[512];
+    snprintf(auth, sizeof(auth), "Authorization: Bearer %s", api_key);
+    headers = curl_slist_append(headers, auth);
+
+    struct openai_stream_ctx ctx = {
+        req->stream_cb, req->stream_user_data, NULL, 0
+    };
+
+    int rc = http_post_stream(url, headers, body, openai_stream_chunk, &ctx);
+
+    free(body);
+    free(ctx.buffer);
+    curl_slist_free_all(headers);
+
+    if (rc != 0) { res.error = "Streaming request failed"; return res; }
+    res.success = 1;
+    return res;
+}
+
+LLMResponse openai_generate(const LLMRequest *req) {
+    const char *api_key = getenv("OPENAI_API_KEY");
+    if (!api_key) {
+        LLMResponse res = {0};
+        res.error = "Missing OPENAI_API_KEY environment variable";
+        return res;
+    }
+    if (req->stream && req->stream_cb) {
+        return do_openai_request_stream("https://api.openai.com/v1/chat/completions", api_key, req);
+    }
+    return do_openai_request("https://api.openai.com/v1/chat/completions", api_key, req, 0);
 }
